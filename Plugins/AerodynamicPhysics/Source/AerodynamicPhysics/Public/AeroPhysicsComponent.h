@@ -292,6 +292,8 @@ private:
 	
 	float CalculateRotDegree(float ControlAxis, float X, float Y);
 
+	void InterpAeroControl(float DeltaTime);
+
 	TArray<FBiVector> AeroSufaceForcesAndTorques;
 	FBiVector AeroSufaceTotalForceAndTorque;
 
@@ -300,8 +302,16 @@ private:
 	float YawControl = 0.0f;
 	float FlapControl = 0.0f;
 
+	float TargetPitchControl = 0.0f;
+	float TargetRollControl = 0.0f;
+	float TargetYawControl = 0.0f;
+	float TargetFlapControl = 0.0f;
+
 	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
 	bool bShowAeroSufaceDubugBox = false;
+
+	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
+	float ControlInterpSpeed = 5.0f;
 
 public:	
 	UPROPERTY(BlueprintReadOnly)
@@ -318,5 +328,8 @@ public:
 
 	UFUNCTION(BlueprintPure)
 	FORCEINLINE float GetCurrentGroundSpeed() const { return GroundSpeed; }
+
+	UFUNCTION(BlueprintPure)
+	FORCEINLINE float GetCurrentGForce() const { return GForce; }
 		
 };

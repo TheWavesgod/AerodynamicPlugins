@@ -129,7 +129,7 @@ struct FAeroSurface
 
 	void SetFlapAngle(float Angle);
 	void SetFullMoveAngle(float Angle);
-	FRotator GetCurrentRelativeRotation() const;
+	FQuat GetCurrentRelativeRotation() const;
 
 	FBiVector CalculateAerodynamicForces(FVector LocalAirVelocity, float AirDensity);
 

@@ -107,11 +107,13 @@ void UAeroPhysicsComponent::AddForceToMesh()
 			Airplane->GetTransform().TransformPosition(ThrusterSettings[i].EngineLocation)
 		);
 	}
-	for (int i = 0; i < AeroSufaceForcesAndTorques.Num(); ++i)
+	/*for (int i = 0; i < AeroSufaceForcesAndTorques.Num(); ++i)
 	{
 		Mesh->AddForce(Airplane->GetTransform().TransformVector(AeroSufaceForcesAndTorques[i].f) * 100.0f);
 		Mesh->AddTorqueInRadians(Airplane->GetTransform().TransformVector(AeroSufaceForcesAndTorques[i].t) * 10000.0f);
-	}
+	}*/
+	Mesh->AddForce(Airplane->GetTransform().TransformVector(AeroSufaceTotalForceAndTorque.f) * 100.0f);
+	Mesh->AddTorqueInRadians(Airplane->GetTransform().TransformVector(AeroSufaceTotalForceAndTorque.t) * 10000.0f);
 }
 
 void UAeroPhysicsComponent::AeroPhysicsTick(float DeltaTime)
@@ -138,6 +140,10 @@ void UAeroPhysicsComponent::AeroParametersCalculation(float DeltaTime)
 	MeshAcceleration = (MeshVelocity - LastFrameMeshVelocity) / DeltaTime;
 
 	MeshAngularVelocityInRadians = Mesh->GetPhysicsAngularVelocityInRadians();
+
+	float G = -MeshVelocity.Dot(Mesh->GetForwardVector()) * MeshAngularVelocityInRadians.Dot(Mesh->GetRightVector()) * 0.01f / 9.81f; 
+
+	AddDebugMessageOnScreen(DeltaTime, FColor::Cyan, FString::Printf(TEXT("GForce: %f"), G));
 
 	GForce = CalculateCurrentGForce(DeltaTime);
 
@@ -362,16 +368,18 @@ void UAeroPhysicsComponent::ThrusterForceCalculation(float DeltaTime)
 
 void UAeroPhysicsComponent::AerodynamicFroceCalculation(float DeltaTime)
 {
+	InterpAeroControl(DeltaTime);
+
 	AeroSufaceTotalForceAndTorque.f = FVector::ZeroVector;
 	AeroSufaceTotalForceAndTorque.t = FVector::ZeroVector;
-	for (int i = 0; i < 8/*AerodynamicSurfaceSettings.Num()*/; ++i)
+	for (int i = 0; i < AerodynamicSurfaceSettings.Num(); ++i)
 	{
 		if (bShowAeroSufaceDubugBox)
 		{
 			DrawDebugSolidBox(GetWorld(),
 				Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
 				FVector(AerodynamicSurfaceSettings[i].Config.Chord * 50.0f, AerodynamicSurfaceSettings[i].Config.Span * 50.0f, 5.0f),
-				Mesh->GetComponentTransform().TransformRotation(AerodynamicSurfaceSettings[i].GetCurrentRelativeRotation().Quaternion()),
+				Mesh->GetComponentTransform().TransformRotation(AerodynamicSurfaceSettings[i].GetCurrentRelativeRotation()),
 				FColor::Purple,
 				false,
 				DeltaTime
@@ -390,6 +398,7 @@ void UAeroPhysicsComponent::AerodynamicFroceCalculation(float DeltaTime)
 		if (AerodynamicSurfaceSettings[i].ControlConfig.bYawControl)
 		{
 			RotDegree += CalculateRotDegree(YawControl, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y);
+			AddDebugMessageOnScreen(DeltaTime, FColor::Cyan, FString::Printf(TEXT("RotDegree: %f"), RotDegree));
 		}
 		if (AerodynamicSurfaceSettings[i].ControlConfig.bFlapControl)
 		{
@@ -418,22 +427,25 @@ void UAeroPhysicsComponent::AerodynamicFroceCalculation(float DeltaTime)
 		AeroSufaceTotalForceAndTorque.t += AerodynamicForces.t;
 		AeroSufaceForcesAndTorques[i] = AerodynamicForces;
 
-		DrawDebugLine(
-			GetWorld(),
-			Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
-			Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition) + Mesh->GetComponentTransform().TransformVector(AeroSufaceForcesAndTorques[i].f) * 500.0f,
-			FColor::Yellow,
-			false,
-			DeltaTime
-		);
-		DrawDebugLine(
-			GetWorld(),
-			Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
-			Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition) + Mesh->GetComponentTransform().TransformVector(AeroSufaceForcesAndTorques[i].t) * 500.0f,
-			FColor::Green,
-			false,
-			DeltaTime
-		);
+		if (false)
+		{
+			DrawDebugLine(
+				GetWorld(),
+				Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
+				Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition) + Mesh->GetComponentTransform().TransformVector(AeroSufaceForcesAndTorques[i].f) * 500.0f,
+				FColor::Yellow,
+				false,
+				DeltaTime
+			);
+			DrawDebugLine(
+				GetWorld(),
+				Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
+				Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition) + Mesh->GetComponentTransform().TransformVector(AeroSufaceForcesAndTorques[i].t) * 500.0f,
+				FColor::Green,
+				false,
+				DeltaTime
+			);
+		}
 	}
 }
 
@@ -447,6 +459,14 @@ float UAeroPhysicsComponent::CalculateRotDegree(float ControlAxis, float X, floa
 	{
 		return FMath::Abs(ControlAxis) * Y;
 	}
+}
+
+void UAeroPhysicsComponent::InterpAeroControl(float DeltaTime)
+{
+	PitchControl = FMath::FInterpConstantTo(PitchControl, TargetPitchControl, DeltaTime, ControlInterpSpeed);
+	RollControl = FMath::FInterpConstantTo(RollControl, TargetRollControl, DeltaTime, ControlInterpSpeed);
+	YawControl = FMath::FInterpConstantTo(YawControl, TargetYawControl, DeltaTime, ControlInterpSpeed);
+	FlapControl = FMath::FInterpConstantTo(FlapControl, TargetFlapControl, DeltaTime, ControlInterpSpeed);
 }
 
 
@@ -477,22 +497,22 @@ void UAeroPhysicsComponent::SetAddThruster(float AxisValue)
 
 void UAeroPhysicsComponent::SetAeroPitchControl(float AxisValue)
 {
-	PitchControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+	TargetPitchControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
 }
 
 void UAeroPhysicsComponent::SetAeroRollControl(float AxisValue)
 {
-	RollControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+	TargetRollControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
 }
 
 void UAeroPhysicsComponent::SetAeroYawControl(float AxisValue)
 {
-	YawControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+	TargetYawControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
 }
 
 void UAeroPhysicsComponent::SetAeroFlapControl(float AxisValue)
 {
-	FlapControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+	TargetFlapControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
 }
 
 void UAeroPhysicsComponent::DebugTick(float DeltaTime)

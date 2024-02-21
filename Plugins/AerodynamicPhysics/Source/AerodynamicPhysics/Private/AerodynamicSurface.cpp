@@ -10,12 +10,13 @@ void FAeroSurface::SetFlapAngle(float angle)
 
 void FAeroSurface::SetFullMoveAngle(float Angle)
 {
-	FullControlRotate = FQuat(FVector(0.0f, 1.0f, 0.0f), FMath::DegreesToRadians(Angle));
+	//FullControlRotate = FQuat(FVector(0.0f, 1.0f, 0.0f), FMath::DegreesToRadians(Angle));
+	FullControlRotate = FQuat(FRotator(Angle, 0.0f, 0.0f));
 }
 
-FRotator FAeroSurface::GetCurrentRelativeRotation() const
+FQuat FAeroSurface::GetCurrentRelativeRotation() const
 {
-	return (FullControlRotate * RelativeRotation.Quaternion()).Rotator();
+	return FullControlRotate * RelativeRotation.Quaternion();
 }
 
 FBiVector FAeroSurface::CalculateAerodynamicForces(FVector LocalAirVelocity, float AirDensity)
@@ -43,11 +44,11 @@ FBiVector FAeroSurface::CalculateAerodynamicForces(FVector LocalAirVelocity, flo
 
 	// Calculating air velocity relative to the surface's coordinate system.
 	// Y component of the velocity is discarded. 
-	FRotator CurrentRelativeRotation = (FullControlRotate * RelativeRotation.Quaternion()).Rotator();
-	FVector airVelocity = CurrentRelativeRotation.RotateVector(LocalAirVelocity);
+	FQuat CurrentRelativeRotation = FullControlRotate * RelativeRotation.Quaternion();
+	FVector airVelocity = CurrentRelativeRotation.UnrotateVector(LocalAirVelocity);
 	airVelocity = FVector(airVelocity.X, 0.0f, airVelocity.Z);
-	FVector dragDirection = CurrentRelativeRotation.UnrotateVector(airVelocity.GetSafeNormal());
-	FVector liftDirection = CurrentRelativeRotation.Quaternion().GetRightVector().Cross(dragDirection);
+	FVector dragDirection = CurrentRelativeRotation.RotateVector(airVelocity.GetSafeNormal());
+	FVector liftDirection = CurrentRelativeRotation.GetRightVector().Cross(dragDirection);
 
 	float area = Config.Chord * Config.Span;
 	float dynamicPressure = 0.5f * AirDensity * FMath::Square(airVelocity.Size() * 0.01f);
@@ -59,7 +60,7 @@ FBiVector FAeroSurface::CalculateAerodynamicForces(FVector LocalAirVelocity, flo
 
 	FVector lift = liftDirection * aerodynamicCoefficients.X * dynamicPressure * area;
 	FVector drag = dragDirection * aerodynamicCoefficients.Y * dynamicPressure * area;
-	FVector torque = CurrentRelativeRotation.Quaternion().GetRightVector() * aerodynamicCoefficients.Z * dynamicPressure * area * Config.Chord;
+	FVector torque = CurrentRelativeRotation.GetRightVector() * aerodynamicCoefficients.Z * dynamicPressure * area * Config.Chord;
 	FVector LiftAndDragTorque = RelativePosition.Cross(lift + drag) * 0.01f;
 
 	return FBiVector(lift + drag, torque + LiftAndDragTorque);
