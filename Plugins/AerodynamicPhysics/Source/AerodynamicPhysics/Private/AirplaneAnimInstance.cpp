@@ -24,6 +24,11 @@ void UAirplaneAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	bIsWheelsRetreated = AeroPhysicsComponent->GetIsWheelsRetreated();
+
+	for (int i = 0; i < AeroPhysicsComponent->AerosufaceAnimVaribles.Num(); ++i)
+	{
+		AerosurfaceRotDegree[i] = AeroPhysicsComponent->AerosufaceAnimVaribles[i].RotDegree;
+	}
 }
 
 void UAirplaneAnimInstance::InitializeArray()
@@ -37,4 +42,8 @@ void UAirplaneAnimInstance::InitializeArray()
 
 	SuspensionDisplacements.Init(0.0f, size);
 	TyresRotation.Init(FRotator(), size);
+
+	size = AeroPhysicsComponent->AerosufaceAnimVaribles.Num();
+
+	AerosurfaceRotDegree.Init(0.0f, size);
 }

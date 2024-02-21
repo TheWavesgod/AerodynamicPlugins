@@ -35,6 +35,14 @@ void UAeroPhysicsComponent::BeginPlay()
 	}
 
 	InitializeArray();
+
+	for (auto i : AerodynamicSurfaceSettings)
+	{
+		i.Config.OnValidate();
+	}
+	/*FTimerHandle TimerHandle;
+	float Interval = 1.0f / PhysicsDT;
+	GetWorld()->GetTimerManager().SetTimer(TimerHandle, this, &ThisClass::AeroPhysicsFun, Interval, true);*/
 }
 
 void UAeroPhysicsComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -61,6 +69,10 @@ void UAeroPhysicsComponent::InitializeArray()
 	int32 ThrusterNum = ThrusterSettings.Num();
 	ThrusterForcesToAdd.Init(FVector::ZeroVector, ThrusterNum);
 	CurrentThrusters.Init(0.0f, ThrusterNum);
+
+	int32 AeroSurfaceNum = AerodynamicSurfaceSettings.Num();
+	AeroSufaceForcesAndTorques.Init(FBiVector(FVector::ZeroVector, FVector::ZeroVector), AeroSurfaceNum);
+	AerosufaceAnimVaribles.Init(FAerosufaceAnimVaribles(), AeroSurfaceNum);
 }
 
 void UAeroPhysicsComponent::InitializeAnimationInstance()
@@ -90,14 +102,15 @@ void UAeroPhysicsComponent::AddForceToMesh()
 	}
 	for (int i = 0; i < ThrusterForcesToAdd.Num(); ++i)
 	{
-		Mesh->AddForceAtLocationLocal(
+		Mesh->AddForceAtLocation(
 			ThrusterForcesToAdd[i] * 100.0f,
-			ThrusterSettings[i].EngineLocation
+			Airplane->GetTransform().TransformPosition(ThrusterSettings[i].EngineLocation)
 		);
-		DrawDebugLine(
-			GetWorld(), 
-			Airplane->GetTransform().TransformPosition(ThrusterSettings[i].EngineLocation), 
-			Airplane->GetTransform().TransformPosition(ThrusterSettings[i].EngineLocation) + Airplane->GetTransform().TransformVector(ThrusterForcesToAdd[i]), FColor::Red, false, 0.0f);
+	}
+	for (int i = 0; i < AeroSufaceForcesAndTorques.Num(); ++i)
+	{
+		Mesh->AddForce(Airplane->GetTransform().TransformVector(AeroSufaceForcesAndTorques[i].f) * 100.0f);
+		Mesh->AddTorqueInRadians(Airplane->GetTransform().TransformVector(AeroSufaceForcesAndTorques[i].t) * 10000.0f);
 	}
 }
 
@@ -110,6 +123,12 @@ void UAeroPhysicsComponent::AeroPhysicsTick(float DeltaTime)
 	WheelsForceCalculation(DeltaTime);
 
 	ThrusterForceCalculation(DeltaTime);
+
+	AerodynamicFroceCalculation(DeltaTime);
+}
+
+void UAeroPhysicsComponent::AeroPhysicsFun()
+{
 }
 
 void UAeroPhysicsComponent::AeroParametersCalculation(float DeltaTime)
@@ -167,21 +186,19 @@ void UAeroPhysicsComponent::WheelsForceCalculation(float DeltaTime)
 		float SuspensionDampingForce = Tyres[i].SuspensionSettings.SuspensionDampingRatio * SuspensionDampingAspect;
 		//SuspensionDampingForce = FMath::Abs(SuspensionDampingForce) > SpringForce ? 0.0f : SuspensionDampingForce;
 
-		if (FMath::Abs(SuspensionDistanceDisplacementVel) > SuspensionStaticThreshold)
+		/*if (FMath::Abs(SuspensionDistanceDisplacementVel) > SuspensionStaticThreshold)
 		{
 			AddDebugMessageOnScreen(0.0f, FColor::Blue, FString::Printf(TEXT("Suspension %d: Moving"), i));
 		}
 		else
 		{
 			AddDebugMessageOnScreen(0.0f, FColor::Blue, FString::Printf(TEXT("Suspension %d: Static"), i));
-		}
+		}*/
 
 		float ActualSuspensionForce = SpringForce + SuspensionDampingForce;
 
 		FVector SuspensionWorldAxis = Airplane->GetActorTransform().TransformVector(Tyres[i].SuspensionSettings.SuspensionAxis);
 		FVector SuspensionForce = ActualSuspensionForce * (-SuspensionWorldAxis);
-
-		//WheelsForcesToAdd[i] = SuspensionForce;
 
 		WheelAnimVaribles[i].SuspensionDisplacement = SpringForceLength - Tyres[i].SuspensionSettings.SpringPreLoadLength - Tyres[i].SuspensionSettings.SuspensionMaxDrop;
 
@@ -190,14 +207,17 @@ void UAeroPhysicsComponent::WheelsForceCalculation(float DeltaTime)
 		FVector WheelVelocity = (WheelCalculationVariblesCache[i].ImpactLocation - WheelCalculationVariblesCache[i].LastFrameImpactLocation) / DeltaTime;
 		FVector WheelPlaneVelocity = FVector::VectorPlaneProject(WheelVelocity, WheelCalculationVariblesCache[i].Normal);
 
+		// Calculate Friction Ratio
 		float SurfaceFrictionRatio = WheelCalculationVariblesCache[i].SurfaceMatrial ? WheelCalculationVariblesCache[i].SurfaceMatrial->Friction : 0.7;
 		float WheelFrictionRatio = Tyres[i].WheelSettings.WheelFrictionRatio;
 		// Friction Ratio Combine mode = Average
 		float FrictionRatio = (SurfaceFrictionRatio + WheelFrictionRatio) / 2.0f;
 		float StaticFrictionRatio = FrictionRatio + 0.1;
-		// Suspension Force resolusion
+
+		// Suspension Force Resolution
 		FVector NormalSuspensionForce = SuspensionForce.ProjectOnToNormal(WheelCalculationVariblesCache[i].Normal);
 		FVector PlaneSuspensionForce = FVector::VectorPlaneProject(SuspensionForce, WheelCalculationVariblesCache[i].Normal);
+
 		// Calculate the wheels' forward and right direction
 		FVector WheelForwardDir = Mesh->GetForwardVector();
 		FVector WheelRightDir = Mesh->GetRightVector();
@@ -221,47 +241,51 @@ void UAeroPhysicsComponent::WheelsForceCalculation(float DeltaTime)
 		FVector WheelFrictionForce;
 		FVector RightSuspensionForce = PlaneSuspensionForce.ProjectOnTo(WheelRightDir);
 		FVector ForwardSuspensionForce = PlaneSuspensionForce.ProjectOnTo(WheelForwardDir);
-		if (FMath::Abs(WheelRightVelocity.Size()) > WheelStaticThreshold)
+
+		if (WheelPlaneVelocity.Size() > WheelStaticThreshold)
 		{
-			// Wheel slides horizontally
-			float WheelFriction = FMath::Clamp(WheelRightVelocity.Size() * 5000.0f, 0.0f, NormalSuspensionForce.Size() * FrictionRatio);
-			WheelFrictionForce = -WheelPlaneVelocity / WheelPlaneVelocity.Size() * WheelFriction + ForwardSuspensionForce;
-			if (WheelFrictionForce.Size() > NormalSuspensionForce.Size() * FrictionRatio)
-			{
-				WheelFrictionForce = -WheelPlaneVelocity / WheelPlaneVelocity.Size() * NormalSuspensionForce.Size() * FrictionRatio;
-			}
+			float MaxStaticFriction = NormalSuspensionForce.Size() * StaticFrictionRatio;
 
-			AddDebugMessageOnScreen(0.0f, FColor::Green, FString::Printf(TEXT("Wheel %d: Slide Happening"), i));
-		}
-		else
-		{
-			float MaxStaticWheelFriction = NormalSuspensionForce.Size() * StaticFrictionRatio;
-			float MaxStaticForwardFriction = FMath::Sqrt(FMath::Square(MaxStaticWheelFriction) - FMath::Square(RightSuspensionForce.Size()));
+			float TargetRightFriction = WheelRightVelocity.Size() * NormalSuspensionForce.Size() / (9.8f * WheelTurnFrictionRatio);
+			FVector TargetRightFrictionForce = -WheelRightVelocity / WheelRightVelocity.Size() * TargetRightFriction;
+			float WheelDrag = NormalSuspensionForce.Size() * Tyres[i].WheelSettings.WheelDragRatio;
+			FVector WheelDragForce = -WheelForwardVelocity / WheelForwardVelocity.Size() * WheelDrag;
+			FVector TargetWheelFricion = TargetRightFrictionForce + WheelDragForce + PlaneSuspensionForce;
 
-			float TargetWheelForwardFriction = 0.0f;
-			if (Tyres[i].WheelSettings.bAffectedByBrake && BrakeForceRatio > 0.0f)
-			{
-				TargetWheelForwardFriction = MaxStaticForwardFriction * BrakeForceRatio;
-			}
-			// Drag
-			TargetWheelForwardFriction += NormalSuspensionForce.Size() * Tyres[i].WheelSettings.WheelDragRatio;
+			/*AddDebugMessageOnScreen(DeltaTime, FColor::Red, FString::Printf(TEXT("Wheel %d TargetRightFriction: %f"), i, TargetRightFriction));*/
 
-			if (FMath::Abs(WheelForwardVelocity.Size()) > WheelStaticThreshold)
+			if (TargetWheelFricion.Size() > MaxStaticFriction)
 			{
-				WheelFrictionForce = -WheelForwardVelocity / WheelForwardVelocity.Size() * TargetWheelForwardFriction + ForwardSuspensionForce;
-				AddDebugMessageOnScreen(0.0f, FColor::Green, FString::Printf(TEXT("Wheel %d: Moving"), i));
+				WheelFrictionForce = WheelPlaneVelocity / WheelPlaneVelocity.Size() * NormalSuspensionForce.Size() * FrictionRatio;
+				/*AddDebugMessageOnScreen(DeltaTime, FColor::Cyan, FString::Printf(TEXT("Wheel %d: sliding"), i));*/
 			}
 			else
 			{
-				if (ForwardSuspensionForce.Size() > TargetWheelForwardFriction)
+				float BrakeForce = 0.0;
+				if (Tyres[i].WheelSettings.bAffectedByBrake && BrakeForceRatio > 0.0f)
 				{
-					WheelFrictionForce = -WheelForwardVelocity / WheelForwardVelocity.Size() * TargetWheelForwardFriction;
+					float MaxBrakeForce = MaxStaticFriction - TargetWheelFricion.Size();
+					BrakeForce = MaxBrakeForce * BrakeForceRatio;
 				}
-				else
-				{
-					WheelFrictionForce = PlaneSuspensionForce - PlaneSuspensionForce;
-				}
-				AddDebugMessageOnScreen(0.0f, FColor::Green, FString::Printf(TEXT("Wheel %d: Static"), i));
+				float TargetForwardFriction = WheelForwardVelocity.Size() * NormalSuspensionForce.Size() / (9.8f * WheelTurnFrictionRatio);
+				float ActualForwardFriction = TargetForwardFriction < (BrakeForce + WheelDrag) ? TargetForwardFriction : (BrakeForce + WheelDrag);
+				FVector ForwardFrictionForce = -WheelForwardVelocity / WheelForwardVelocity.Size() * ActualForwardFriction;
+
+				WheelFrictionForce = ForwardFrictionForce + TargetRightFrictionForce + PlaneSuspensionForce ;
+
+				/*AddDebugMessageOnScreen(DeltaTime, FColor::Cyan, FString::Printf(TEXT("Wheel %d: static friction"), i));
+				AddDebugMessageOnScreen(DeltaTime, FColor::Red, FString::Printf(TEXT("Wheel %d TargetForwardFriction: %f"), i, TargetForwardFriction));*/
+			}
+		}
+		else
+		{
+			if (PlaneSuspensionForce.Size() > NormalSuspensionForce.Size() * StaticFrictionRatio)
+			{
+				WheelFrictionForce = (PlaneSuspensionForce / PlaneSuspensionForce.Size()) * NormalSuspensionForce.Size() * FrictionRatio;
+			}
+			else
+			{
+				WheelFrictionForce = PlaneSuspensionForce;
 			}
 		}
 
@@ -273,7 +297,8 @@ void UAeroPhysicsComponent::WheelsForceCalculation(float DeltaTime)
 		WheelAnimVaribles[i].WheelRotation.Pitch = WheelAnimVaribles[i].WheelRotation.Pitch > 360.0f ? WheelAnimVaribles[i].WheelRotation.Pitch - 360.0f : WheelAnimVaribles[i].WheelRotation.Pitch;
 		WheelAnimVaribles[i].WheelRotation.Pitch = WheelAnimVaribles[i].WheelRotation.Pitch < 0.0f ? WheelAnimVaribles[i].WheelRotation.Pitch + 360.0f : WheelAnimVaribles[i].WheelRotation.Pitch;
 
-		DrawDebugLine(GetWorld(), WheelCalculationVariblesCache[i].ImpactLocation, WheelCalculationVariblesCache[i].ImpactLocation + SuspensionForce * 10.0f, FColor::Green, false, 0.0f);
+		/*DrawDebugLine(GetWorld(), WheelCalculationVariblesCache[i].ImpactLocation, WheelCalculationVariblesCache[i].ImpactLocation + SuspensionForce * 10.0f, FColor::Green, false, 0.0f);
+		DrawDebugLine(GetWorld(), WheelCalculationVariblesCache[i].ImpactLocation, WheelCalculationVariblesCache[i].ImpactLocation + WheelFrictionForce * 10.0f, FColor::Red, false, 0.0f);*/
 	}
 }
 
@@ -330,10 +355,101 @@ void UAeroPhysicsComponent::ThrusterForceCalculation(float DeltaTime)
 
 		FVector ThrusterForcesAtLocal = ThrusterSettings[i].ThrustAixs * CurrentThrusters[i];
 
-		ThrusterForcesToAdd[i] = ThrusterForcesAtLocal;
-		//ThrusterForcesToAdd[i] = Airplane->GetTransform().TransformVector(ThrusterForcesAtLocal);
+		//ThrusterForcesToAdd[i] = ThrusterForcesAtLocal;
+		ThrusterForcesToAdd[i] = Airplane->GetTransform().TransformVector(ThrusterForcesAtLocal);
 	}
 }
+
+void UAeroPhysicsComponent::AerodynamicFroceCalculation(float DeltaTime)
+{
+	AeroSufaceTotalForceAndTorque.f = FVector::ZeroVector;
+	AeroSufaceTotalForceAndTorque.t = FVector::ZeroVector;
+	for (int i = 0; i < 8/*AerodynamicSurfaceSettings.Num()*/; ++i)
+	{
+		if (bShowAeroSufaceDubugBox)
+		{
+			DrawDebugSolidBox(GetWorld(),
+				Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
+				FVector(AerodynamicSurfaceSettings[i].Config.Chord * 50.0f, AerodynamicSurfaceSettings[i].Config.Span * 50.0f, 5.0f),
+				Mesh->GetComponentTransform().TransformRotation(AerodynamicSurfaceSettings[i].GetCurrentRelativeRotation().Quaternion()),
+				FColor::Purple,
+				false,
+				DeltaTime
+			);
+		}
+
+		float RotDegree = 0.0f;
+		if (AerodynamicSurfaceSettings[i].ControlConfig.bPitchControl)
+		{
+			RotDegree += CalculateRotDegree(PitchControl, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y);
+		}
+		if (AerodynamicSurfaceSettings[i].ControlConfig.bRollControl)
+		{
+			RotDegree += CalculateRotDegree(RollControl, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y);
+		}
+		if (AerodynamicSurfaceSettings[i].ControlConfig.bYawControl)
+		{
+			RotDegree += CalculateRotDegree(YawControl, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y);
+		}
+		if (AerodynamicSurfaceSettings[i].ControlConfig.bFlapControl)
+		{
+			RotDegree += CalculateRotDegree(FlapControl, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y);
+		}
+		RotDegree = AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X < AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y ?
+			FMath::Clamp(RotDegree, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y) : 
+			FMath::Clamp(RotDegree, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X);
+
+		if (AerodynamicSurfaceSettings[i].ControlConfig.bIsFullMove)
+		{
+			AerodynamicSurfaceSettings[i].SetFullMoveAngle(RotDegree);
+		}
+		else
+		{
+			AerodynamicSurfaceSettings[i].SetFlapAngle(RotDegree);
+		}
+		AerosufaceAnimVaribles[i].RotDegree = RotDegree;
+
+		FBiVector AerodynamicForces = AerodynamicSurfaceSettings[i].CalculateAerodynamicForces(
+			Mesh->GetComponentTransform().InverseTransformVector(-Mesh->GetPhysicsLinearVelocity()),
+			1.225f
+		);
+
+		AeroSufaceTotalForceAndTorque.f += AerodynamicForces.f;
+		AeroSufaceTotalForceAndTorque.t += AerodynamicForces.t;
+		AeroSufaceForcesAndTorques[i] = AerodynamicForces;
+
+		DrawDebugLine(
+			GetWorld(),
+			Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
+			Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition) + Mesh->GetComponentTransform().TransformVector(AeroSufaceForcesAndTorques[i].f) * 500.0f,
+			FColor::Yellow,
+			false,
+			DeltaTime
+		);
+		DrawDebugLine(
+			GetWorld(),
+			Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
+			Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition) + Mesh->GetComponentTransform().TransformVector(AeroSufaceForcesAndTorques[i].t) * 500.0f,
+			FColor::Green,
+			false,
+			DeltaTime
+		);
+	}
+}
+
+float UAeroPhysicsComponent::CalculateRotDegree(float ControlAxis, float X, float Y)
+{
+	if (ControlAxis < 0)
+	{
+		return FMath::Abs(ControlAxis) * X;
+	}
+	else
+	{
+		return FMath::Abs(ControlAxis) * Y;
+	}
+}
+
+
 
 void UAeroPhysicsComponent::SetWheelsBrake(float AxisValue)
 {
@@ -357,6 +473,26 @@ void UAeroPhysicsComponent::SetAddThruster(float AxisValue)
 	float TargetCurrentThrusterRatio = CurrentThrusterRatio + Axis * ThrusterRatioAddPerSecond * GetWorld()->GetDeltaSeconds();
 
 	CurrentThrusterRatio = FMath::Clamp(TargetCurrentThrusterRatio, 0.0f, 1.0f);
+}
+
+void UAeroPhysicsComponent::SetAeroPitchControl(float AxisValue)
+{
+	PitchControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+}
+
+void UAeroPhysicsComponent::SetAeroRollControl(float AxisValue)
+{
+	RollControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+}
+
+void UAeroPhysicsComponent::SetAeroYawControl(float AxisValue)
+{
+	YawControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+}
+
+void UAeroPhysicsComponent::SetAeroFlapControl(float AxisValue)
+{
+	FlapControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
 }
 
 void UAeroPhysicsComponent::DebugTick(float DeltaTime)

@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "AerodynamicSurface.h"
+
 #include "AeroPhysicsComponent.generated.h"
 
 USTRUCT(BlueprintType)
@@ -126,6 +128,16 @@ struct FWheelAnimVaribles
 	FRotator WheelRotation;
 };
 
+USTRUCT(BlueprintType)
+struct FAerosufaceAnimVaribles
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="Aerosurface")
+	float RotDegree;
+
+};
+
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class AERODYNAMICPHYSICS_API UAeroPhysicsComponent : public UActorComponent
 {
@@ -155,6 +167,10 @@ public:
 	 UPROPERTY(EditAnywhere, Category = "Configs")
 	 TArray<FAirplaneThrusterSettings> ThrusterSettings;
 
+	 // Aerodynamic Surface Config
+	 UPROPERTY(EditAnywhere, Category = "Configs")
+	 TArray<FAeroSurface> AerodynamicSurfaceSettings;
+
 	 /** Axis Value between 0 - 1 */
 	UFUNCTION(BlueprintCallable)
 	void SetWheelsBrake(float AxisValue);
@@ -169,6 +185,22 @@ public:
 	/** Axis Value between -1 - 1 will add to throttle*/
 	UFUNCTION(BlueprintCallable)
 	void SetAddThruster(float AxisValue);
+
+	/** Axis Value between -1 - 1 Pitch Control */
+	UFUNCTION(BlueprintCallable)
+	void SetAeroPitchControl(float AxisValue);
+
+	/** Axis Value between -1 - 1 Roll Control */
+	UFUNCTION(BlueprintCallable)
+	void SetAeroRollControl(float AxisValue);
+
+	/** Axis Value between -1 - 1 Yaw Control */
+	UFUNCTION(BlueprintCallable)
+	void SetAeroYawControl(float AxisValue);
+
+	/** Axis Value between -1 - 1 Flap Control */
+	UFUNCTION(BlueprintCallable)
+	void SetAeroFlapControl(float AxisValue);
 
 protected:
 	virtual void BeginPlay() override;
@@ -188,6 +220,9 @@ private:
 	class AAirplane* Airplane;
 	class USkeletalMeshComponent* Mesh;
 	class UAirplaneAnimInstance* MeshAnimInstance;
+
+	float PhysicsDT = 60.0f;
+	void AeroPhysicsFun();
 
 	/**
 	 * Airplane State Calculation
@@ -218,11 +253,14 @@ private:
 	TArray<FWheelCacheVaribles> WheelCalculationVariblesCache;
 	TArray<FVector> WheelsForcesToAdd;
 
-	UPROPERTY(EditAnywhere, Category = "WheelFrictionDebug Parameters")
+	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
 	float SuspensionStaticThreshold = 0.05; 
 
-	UPROPERTY(EditAnywhere, Category = "WheelFrictionDebug Parameters")
+	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
 	float WheelStaticThreshold = 0.05; 
+
+	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
+	float WheelTurnFrictionRatio = 100; 
 
 	// extra length used for wheel Raycast
 	float WheelRayOffset = 100.0f;
@@ -240,16 +278,37 @@ private:
 
 	float CurrentThrusterRatio;
 
-	UPROPERTY(EditAnywhere, Category = "WheelFrictionDebug Parameters")
+	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
 	float ThrusterRatioAddPerSecond = 0.2f; 
 
 	TArray<float> CurrentThrusters;
 
 	TArray<FVector> ThrusterForcesToAdd;
 
+	/**
+	 * Aerodynamic Force Calculation
+	 */
+	void AerodynamicFroceCalculation(float DeltaTime);
+	
+	float CalculateRotDegree(float ControlAxis, float X, float Y);
+
+	TArray<FBiVector> AeroSufaceForcesAndTorques;
+	FBiVector AeroSufaceTotalForceAndTorque;
+
+	float PitchControl = 0.0f;
+	float RollControl = 0.0f;
+	float YawControl = 0.0f;
+	float FlapControl = 0.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
+	bool bShowAeroSufaceDubugBox = false;
+
 public:	
 	UPROPERTY(BlueprintReadOnly)
 	TArray<FWheelAnimVaribles> WheelAnimVaribles;
+
+	UPROPERTY(BlueprintReadOnly)
+	TArray<FAerosufaceAnimVaribles> AerosufaceAnimVaribles;
 
 	UFUNCTION(BlueprintPure)
 	FORCEINLINE bool GetIsWheelsRetreated() const { return bIsWheelsRetreated; }

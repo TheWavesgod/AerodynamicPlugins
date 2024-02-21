@@ -29,6 +29,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = Movement, meta = (AllowPrivateAccess = "true"))
 	bool bIsWheelsRetreated;
 
+	UPROPERTY(BlueprintReadOnly, Category = Movement, meta = (AllowPrivateAccess = "true"))
+	TArray<float> AerosurfaceRotDegree;
+
 	void InitializeArray();
 
 public:
