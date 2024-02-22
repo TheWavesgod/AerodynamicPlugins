@@ -292,8 +292,6 @@ private:
 	
 	float CalculateRotDegree(float ControlAxis, float X, float Y);
 
-	void InterpAeroControl(float DeltaTime);
-
 	TArray<FBiVector> AeroSufaceForcesAndTorques;
 	FBiVector AeroSufaceTotalForceAndTorque;
 
@@ -312,6 +310,13 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
 	float ControlInterpSpeed = 5.0f;
+
+	/**
+	 * Flying Control System
+	 */
+	void CalculateFlyControl(float DeltaTime);
+
+	void InterpAeroControl(float DeltaTime);
 
 public:	
 	UPROPERTY(BlueprintReadOnly)

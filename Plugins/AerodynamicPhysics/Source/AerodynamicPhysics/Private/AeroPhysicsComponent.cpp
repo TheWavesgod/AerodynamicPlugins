@@ -114,6 +114,7 @@ void UAeroPhysicsComponent::AddForceToMesh()
 	}*/
 	Mesh->AddForce(Airplane->GetTransform().TransformVector(AeroSufaceTotalForceAndTorque.f) * 100.0f);
 	Mesh->AddTorqueInRadians(Airplane->GetTransform().TransformVector(AeroSufaceTotalForceAndTorque.t) * 10000.0f);
+	DrawDebugLine(GetWorld(), Airplane->GetTransform().GetLocation(), Airplane->GetTransform().GetLocation() + Airplane->GetTransform().TransformVector(AeroSufaceTotalForceAndTorque.t), FColor::Red, false, 0.0f);
 }
 
 void UAeroPhysicsComponent::AeroPhysicsTick(float DeltaTime)
@@ -125,6 +126,8 @@ void UAeroPhysicsComponent::AeroPhysicsTick(float DeltaTime)
 	WheelsForceCalculation(DeltaTime);
 
 	ThrusterForceCalculation(DeltaTime);
+
+	CalculateFlyControl(DeltaTime);
 
 	AerodynamicFroceCalculation(DeltaTime);
 }
@@ -368,8 +371,6 @@ void UAeroPhysicsComponent::ThrusterForceCalculation(float DeltaTime)
 
 void UAeroPhysicsComponent::AerodynamicFroceCalculation(float DeltaTime)
 {
-	InterpAeroControl(DeltaTime);
-
 	AeroSufaceTotalForceAndTorque.f = FVector::ZeroVector;
 	AeroSufaceTotalForceAndTorque.t = FVector::ZeroVector;
 	for (int i = 0; i < AerodynamicSurfaceSettings.Num(); ++i)
@@ -459,6 +460,12 @@ float UAeroPhysicsComponent::CalculateRotDegree(float ControlAxis, float X, floa
 	{
 		return FMath::Abs(ControlAxis) * Y;
 	}
+}
+
+void UAeroPhysicsComponent::CalculateFlyControl(float DeltaTime)
+{
+
+	InterpAeroControl(DeltaTime);
 }
 
 void UAeroPhysicsComponent::InterpAeroControl(float DeltaTime)
