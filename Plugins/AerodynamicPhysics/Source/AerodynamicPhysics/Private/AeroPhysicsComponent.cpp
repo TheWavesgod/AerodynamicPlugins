@@ -144,11 +144,7 @@ void UAeroPhysicsComponent::AeroParametersCalculation(float DeltaTime)
 
 	MeshAngularVelocityInRadians = Mesh->GetPhysicsAngularVelocityInRadians();
 
-	float G = -MeshVelocity.Dot(Mesh->GetForwardVector()) * MeshAngularVelocityInRadians.Dot(Mesh->GetRightVector()) * 0.01f / 9.81f; 
-
-	AddDebugMessageOnScreen(DeltaTime, FColor::Cyan, FString::Printf(TEXT("GForce: %f"), G));
-
-	GForce = CalculateCurrentGForce(DeltaTime);
+	GForce = -MeshVelocity.Dot(Mesh->GetForwardVector()) * MeshAngularVelocityInRadians.Dot(Mesh->GetRightVector()) * 0.01f / 9.81f;
 
 	FVector ForwardVelocity = MeshVelocity.ProjectOnTo(Mesh->GetForwardVector());
 	GroundSpeed = ForwardVelocity.Size() * 0.036;
@@ -362,7 +358,7 @@ void UAeroPhysicsComponent::ThrusterForceCalculation(float DeltaTime)
 
 		CurrentThrusters[i] = FMath::FInterpTo(CurrentThrusters[i], TargetThruster, DeltaTime, 3.0f);
 
-		FVector ThrusterForcesAtLocal = ThrusterSettings[i].ThrustAixs * CurrentThrusters[i];
+		FVector ThrusterForcesAtLocal = ThrusterSettings[i].ThrustAixs.GetSafeNormal() * CurrentThrusters[i];
 
 		//ThrusterForcesToAdd[i] = ThrusterForcesAtLocal;
 		ThrusterForcesToAdd[i] = Airplane->GetTransform().TransformVector(ThrusterForcesAtLocal);
@@ -406,47 +402,47 @@ void UAeroPhysicsComponent::AerodynamicFroceCalculation(float DeltaTime)
 			RotDegree += CalculateRotDegree(FlapControl, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y);
 		}
 		RotDegree = AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X < AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y ?
-			FMath::Clamp(RotDegree, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y) : 
-			FMath::Clamp(RotDegree, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X);
+			FMath::Clamp(RotDegree, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y) :
+				FMath::Clamp(RotDegree, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.Y, AerodynamicSurfaceSettings[i].ControlConfig.ControlAngleMapDegree.X);
 
-		if (AerodynamicSurfaceSettings[i].ControlConfig.bIsFullMove)
-		{
-			AerodynamicSurfaceSettings[i].SetFullMoveAngle(RotDegree);
-		}
-		else
-		{
-			AerodynamicSurfaceSettings[i].SetFlapAngle(RotDegree);
-		}
-		AerosufaceAnimVaribles[i].RotDegree = RotDegree;
+			if (AerodynamicSurfaceSettings[i].ControlConfig.bIsFullMove)
+			{
+				AerodynamicSurfaceSettings[i].SetFullMoveAngle(RotDegree);
+			}
+			else
+			{
+				AerodynamicSurfaceSettings[i].SetFlapAngle(RotDegree);
+			}
+			AerosufaceAnimVaribles[i].RotDegree = RotDegree;
 
-		FBiVector AerodynamicForces = AerodynamicSurfaceSettings[i].CalculateAerodynamicForces(
-			Mesh->GetComponentTransform().InverseTransformVector(-Mesh->GetPhysicsLinearVelocity()),
-			1.225f
-		);
-
-		AeroSufaceTotalForceAndTorque.f += AerodynamicForces.f;
-		AeroSufaceTotalForceAndTorque.t += AerodynamicForces.t;
-		AeroSufaceForcesAndTorques[i] = AerodynamicForces;
-
-		if (false)
-		{
-			DrawDebugLine(
-				GetWorld(),
-				Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
-				Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition) + Mesh->GetComponentTransform().TransformVector(AeroSufaceForcesAndTorques[i].f) * 500.0f,
-				FColor::Yellow,
-				false,
-				DeltaTime
+			FBiVector AerodynamicForces = AerodynamicSurfaceSettings[i].CalculateAerodynamicForces(
+				Mesh->GetComponentTransform().InverseTransformVector(-Mesh->GetPhysicsLinearVelocity()),
+				1.225f
 			);
-			DrawDebugLine(
-				GetWorld(),
-				Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
-				Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition) + Mesh->GetComponentTransform().TransformVector(AeroSufaceForcesAndTorques[i].t) * 500.0f,
-				FColor::Green,
-				false,
-				DeltaTime
-			);
-		}
+
+			AeroSufaceTotalForceAndTorque.f += AerodynamicForces.f;
+			AeroSufaceTotalForceAndTorque.t += AerodynamicForces.t;
+			AeroSufaceForcesAndTorques[i] = AerodynamicForces;
+
+			if (false)
+			{
+				DrawDebugLine(
+					GetWorld(),
+					Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
+					Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition) + Mesh->GetComponentTransform().TransformVector(AeroSufaceForcesAndTorques[i].f) * 500.0f,
+					FColor::Yellow,
+					false,
+					DeltaTime
+				);
+				DrawDebugLine(
+					GetWorld(),
+					Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition),
+					Mesh->GetComponentTransform().TransformPosition(AerodynamicSurfaceSettings[i].RelativePosition) + Mesh->GetComponentTransform().TransformVector(AeroSufaceForcesAndTorques[i].t) * 500.0f,
+					FColor::Green,
+					false,
+					DeltaTime
+				);
+			}
 	}
 }
 
@@ -464,16 +460,68 @@ float UAeroPhysicsComponent::CalculateRotDegree(float ControlAxis, float X, floa
 
 void UAeroPhysicsComponent::CalculateFlyControl(float DeltaTime)
 {
+	float SpeedIndex = FMath::Square(GroundSpeed / 100.0f);
 
-	InterpAeroControl(DeltaTime);
+	if (FMath::Abs(GroundSpeed) > 50.0f && FMath::Abs(PitchInput) < 0.005)
+	{
+		float AirplanePitchSpeed = FMath::RadiansToDegrees(MeshAngularVelocityInRadians.Dot(Mesh->GetRightVector()));
+		if (FMath::Abs(AirplanePitchSpeed) > 0.01)
+		{
+			float InterpSpeed = FMath::Square(AirplanePitchSpeed) * 2.0f / SpeedIndex * ControlInterpSpeed;
+			InterpSpeed = FMath::Clamp(InterpSpeed, 0.0f, 1.0f);
+
+			if (AirplanePitchSpeed > 0)
+			{
+				PitchControl -= InterpSpeed * DeltaTime;
+			}
+			else
+			{
+				PitchControl += InterpSpeed * DeltaTime;
+			}
+			PitchControl = FMath::Clamp(PitchControl, -1.0f, 1.0f);
+		}
+	}
+	else
+	{
+		if (PitchInput > PitchControl)
+		{
+			PitchControl += 5.0f * DeltaTime;
+			if (PitchInput < PitchControl)
+			{
+				PitchControl = PitchInput;
+			}
+		}
+		else if (PitchInput < PitchControl)
+		{
+			PitchControl -= 5.0f * DeltaTime;
+			if (PitchInput > PitchControl)
+			{
+				PitchControl = PitchInput;
+			}
+		}
+	}
+
+	if (FMath::Abs(GroundSpeed) > 50.0f && FMath::Abs(RollInput) < 0.005)
+	{
+
+	}
+	else
+	{
+
+	}
+
+
+
+
+	//InterpAeroControl(DeltaTime);
 }
 
 void UAeroPhysicsComponent::InterpAeroControl(float DeltaTime)
 {
-	PitchControl = FMath::FInterpConstantTo(PitchControl, TargetPitchControl, DeltaTime, ControlInterpSpeed);
-	RollControl = FMath::FInterpConstantTo(RollControl, TargetRollControl, DeltaTime, ControlInterpSpeed);
-	YawControl = FMath::FInterpConstantTo(YawControl, TargetYawControl, DeltaTime, ControlInterpSpeed);
-	FlapControl = FMath::FInterpConstantTo(FlapControl, TargetFlapControl, DeltaTime, ControlInterpSpeed);
+	PitchControl = FMath::FInterpConstantTo(PitchControl, PitchInput, DeltaTime, ControlInterpSpeed);
+	RollControl = FMath::FInterpConstantTo(RollControl, RollInput, DeltaTime, ControlInterpSpeed);
+	YawControl = FMath::FInterpConstantTo(YawControl, YawInput, DeltaTime, ControlInterpSpeed);
+	FlapControl = FMath::FInterpConstantTo(FlapControl, FlapInput, DeltaTime, ControlInterpSpeed);
 }
 
 
@@ -504,35 +552,35 @@ void UAeroPhysicsComponent::SetAddThruster(float AxisValue)
 
 void UAeroPhysicsComponent::SetAeroPitchControl(float AxisValue)
 {
-	TargetPitchControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+	PitchInput = FMath::Clamp(AxisValue, -1.0f, 1.0f);
 }
 
 void UAeroPhysicsComponent::SetAeroRollControl(float AxisValue)
 {
-	TargetRollControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+	RollInput = FMath::Clamp(AxisValue, -1.0f, 1.0f);
 }
 
 void UAeroPhysicsComponent::SetAeroYawControl(float AxisValue)
 {
-	TargetYawControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+	YawInput = FMath::Clamp(AxisValue, -1.0f, 1.0f);
 }
 
 void UAeroPhysicsComponent::SetAeroFlapControl(float AxisValue)
 {
-	TargetFlapControl = FMath::Clamp(AxisValue, -1.0f, 1.0f);
+	FlapInput = FMath::Clamp(AxisValue, -1.0f, 1.0f);
 }
 
 void UAeroPhysicsComponent::DebugTick(float DeltaTime)
 {
-	AddDebugMessageOnScreen(0.0f, FColor::Blue, FString::Printf(TEXT("Jet's Weight: %d kg"), FMath::RoundToInt32(Mesh->GetMass())));
-	for (auto i : WheelsForcesToAdd)
+	//AddDebugMessageOnScreen(0.0f, FColor::Blue, FString::Printf(TEXT("Jet's Weight: %d kg"), FMath::RoundToInt32(Mesh->GetMass())));
+	/*for (auto i : WheelsForcesToAdd)
 	{
 		AddDebugMessageOnScreen(0.0f, FColor::Green, FString::Printf(TEXT("WheelForce: %d"), FMath::RoundToInt32(i.Length())));
-	}
-	if (Mesh)
+	}*/
+	/*if (Mesh)
 	{
 		DrawDebugSphere(GetWorld(), Mesh->GetCenterOfMass(), 30.0f, 8, FColor::Red, false, 0.0f);
-	}
+	}*/
 	/*for (int i = 0; i < CurrentThrusters.Num(); ++i)
 	{
 		AddDebugMessageOnScreen(0.0f, FColor::Red, FString::Printf(TEXT("Thruster %d: %d"), i, FMath::RoundToInt32(CurrentThrusters[i])));

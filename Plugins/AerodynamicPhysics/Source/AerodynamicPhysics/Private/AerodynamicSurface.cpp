@@ -16,7 +16,7 @@ void FAeroSurface::SetFullMoveAngle(float Angle)
 
 FQuat FAeroSurface::GetCurrentRelativeRotation() const
 {
-	return FullControlRotate * RelativeRotation.Quaternion();
+	return RelativeRotation.Quaternion() * FullControlRotate;
 }
 
 FBiVector FAeroSurface::CalculateAerodynamicForces(FVector LocalAirVelocity, float AirDensity)
@@ -44,7 +44,7 @@ FBiVector FAeroSurface::CalculateAerodynamicForces(FVector LocalAirVelocity, flo
 
 	// Calculating air velocity relative to the surface's coordinate system.
 	// Y component of the velocity is discarded. 
-	FQuat CurrentRelativeRotation = FullControlRotate * RelativeRotation.Quaternion();
+	FQuat CurrentRelativeRotation = RelativeRotation.Quaternion() * FullControlRotate;
 	FVector airVelocity = CurrentRelativeRotation.UnrotateVector(LocalAirVelocity);
 	airVelocity = FVector(airVelocity.X, 0.0f, airVelocity.Z);
 	FVector dragDirection = CurrentRelativeRotation.RotateVector(airVelocity.GetSafeNormal());
@@ -64,7 +64,8 @@ FBiVector FAeroSurface::CalculateAerodynamicForces(FVector LocalAirVelocity, flo
 	FVector LiftAndDragTorque = RelativePosition.Cross(lift + drag) * 0.01f;
 
 	return FBiVector(lift + drag, torque + LiftAndDragTorque);
-	//return FBiVector(CurrentRelativeRotation.Quaternion().GetForwardVector(), CurrentRelativeRotation.Quaternion().GetUpVector());
+	//return FBiVector(CurrentRelativeRotation.GetForwardVector(), CurrentRelativeRotation.GetUpVector());
+	//return FBiVector(lift, drag);
 }
 
 FVector FAeroSurface::CalculateCoefficients(float angleOfAttack, float correctedLiftSlope, float zeroLiftAoA, float stallAngleHigh, float stallAngleLow)

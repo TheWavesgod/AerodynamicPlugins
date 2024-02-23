@@ -305,6 +305,11 @@ private:
 	float TargetYawControl = 0.0f;
 	float TargetFlapControl = 0.0f;
 
+	float PitchInput = 0.0f;
+	float RollInput = 0.0f;
+	float YawInput = 0.0f;
+	float FlapInput = 0.0f;
+
 	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
 	bool bShowAeroSufaceDubugBox = false;
 
