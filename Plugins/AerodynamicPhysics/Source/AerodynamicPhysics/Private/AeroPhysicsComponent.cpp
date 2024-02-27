@@ -144,7 +144,8 @@ void UAeroPhysicsComponent::AeroParametersCalculation(float DeltaTime)
 
 	MeshAngularVelocityInRadians = Mesh->GetPhysicsAngularVelocityInRadians();
 
-	GForce = -MeshVelocity.Dot(Mesh->GetForwardVector()) * MeshAngularVelocityInRadians.Dot(Mesh->GetRightVector()) * 0.01f / 9.81f;
+	//GForce = -MeshVelocity.Dot(Mesh->GetForwardVector()) * MeshAngularVelocityInRadians.Dot(Mesh->GetRightVector()) * 0.01f / 9.81f;
+	GForce = CalculateCurrentGForce(DeltaTime);
 
 	FVector ForwardVelocity = MeshVelocity.ProjectOnTo(Mesh->GetForwardVector());
 	GroundSpeed = ForwardVelocity.Size() * 0.036;
@@ -170,6 +171,17 @@ float UAeroPhysicsComponent::CalculateCurrentGForce(float DeltaTime)
 
 void UAeroPhysicsComponent::WheelsForceCalculation(float DeltaTime)
 {
+	if (bIsWheelsRetreated)
+	{
+		WheelRetreatedRatio = FMath::FInterpConstantTo(WheelRetreatedRatio, 1.0f, DeltaTime, 0.3f);
+	}
+	else
+	{
+		WheelRetreatedRatio = FMath::FInterpConstantTo(WheelRetreatedRatio, 0.0f, DeltaTime, 0.3f);
+	}
+
+	if (WheelRetreatedRatio >= 1.0f) { return; }
+
 	WheelsRaycastAndVariablesCache();
 
 	for (int i = 0; i < WheelCalculationVariblesCache.Num(); ++i)
@@ -177,6 +189,8 @@ void UAeroPhysicsComponent::WheelsForceCalculation(float DeltaTime)
 		if (!WheelCalculationVariblesCache[i].bIsHit)
 		{
 			WheelsForcesToAdd[i] = FVector::ZeroVector;
+			WheelAnimVaribles[i].SuspensionDisplacement = FMath::FInterpTo(WheelAnimVaribles[i].SuspensionDisplacement, 0.0f, DeltaTime, 5.0f);
+			WheelAnimVaribles[i].WheelRotation.Pitch = FMath::FInterpTo(WheelAnimVaribles[i].WheelRotation.Pitch, 0.0f, DeltaTime, 5.0f);
 			continue;
 		}
 
@@ -462,13 +476,16 @@ void UAeroPhysicsComponent::CalculateFlyControl(float DeltaTime)
 {
 	float SpeedIndex = FMath::Square(GroundSpeed / 100.0f);
 
+	float GSpeedIndex = SpeedIndex * FMath::Abs(GroundSpeed / 100.0f);
+	float TargetPitchControlLimitRatio = FMath::Clamp(PitchControlLimitRatio / GSpeedIndex, 0.0f, 1.0f);
 	if (FMath::Abs(GroundSpeed) > 50.0f && FMath::Abs(PitchInput) < 0.005)
 	{
 		float AirplanePitchSpeed = FMath::RadiansToDegrees(MeshAngularVelocityInRadians.Dot(Mesh->GetRightVector()));
-		if (FMath::Abs(AirplanePitchSpeed) > 0.01)
+		if (FMath::Abs(AirplanePitchSpeed) > 0.05)
 		{
-			float InterpSpeed = FMath::Square(AirplanePitchSpeed) * 2.0f / SpeedIndex * ControlInterpSpeed;
-			InterpSpeed = FMath::Clamp(InterpSpeed, 0.0f, 1.0f);
+			float InterpSpeed = FMath::Abs(AirplanePitchSpeed) * PitchControlInterpSpeed /*/ FMath::Abs(GroundSpeed / 100.0f)*/;
+			InterpSpeed = FMath::Clamp(InterpSpeed, 0.0f, 5.0f);
+			AddDebugMessageOnScreen(DeltaTime, FColor::Red, FString::Printf(TEXT("InterpSpeed: %f"), InterpSpeed));
 
 			if (AirplanePitchSpeed > 0)
 			{
@@ -478,50 +495,51 @@ void UAeroPhysicsComponent::CalculateFlyControl(float DeltaTime)
 			{
 				PitchControl += InterpSpeed * DeltaTime;
 			}
-			PitchControl = FMath::Clamp(PitchControl, -1.0f, 1.0f);
+			PitchControl = TargetPitchControlLimitRatio * FMath::Clamp(PitchControl, -1.0f, 1.0f);
 		}
 	}
 	else
 	{
-		if (PitchInput > PitchControl)
+		TargetPitchControl = PitchInput * TargetPitchControlLimitRatio;
+		if (PitchInput > 0.0f)
 		{
-			PitchControl += 5.0f * DeltaTime;
-			if (PitchInput < PitchControl)
-			{
-				PitchControl = PitchInput;
-			}
+			TargetPitchControl *= 0.25f;
 		}
-		else if (PitchInput < PitchControl)
-		{
-			PitchControl -= 5.0f * DeltaTime;
-			if (PitchInput > PitchControl)
-			{
-				PitchControl = PitchInput;
-			}
-		}
+		PitchControl = FMath::FInterpTo(PitchControl, TargetPitchControl, DeltaTime, 5.0f);
 	}
 
+	float TargetRollControlLimitRatio = FMath::Clamp(RollControlLimitRatio / SpeedIndex, 0.0f, 1.0f);
 	if (FMath::Abs(GroundSpeed) > 50.0f && FMath::Abs(RollInput) < 0.005)
 	{
+		float AirplaneRollSpeed = FMath::RadiansToDegrees(MeshAngularVelocityInRadians.Dot(Mesh->GetForwardVector()));
+		if (FMath::Abs(AirplaneRollSpeed) > 1.0f)
+		{
+			TargetRollControl = FMath::Clamp(AirplaneRollSpeed * 0.01, -1.0f, 1.0f) * TargetRollControlLimitRatio;
+		}
+		else
+		{
+			TargetRollControl = RollInput;
+		}
 
+		RollControl = FMath::FInterpTo(RollControl, TargetRollControl, DeltaTime, 3.0f);
 	}
 	else
 	{
-
+		TargetRollControl = RollInput * TargetRollControlLimitRatio;
+		RollControl = FMath::FInterpTo(RollControl, TargetRollControl, DeltaTime, 5.0f);
 	}
 
+	YawControl = FMath::FInterpTo(YawControl, YawInput, DeltaTime, 5.0f);
 
-
-
-	//InterpAeroControl(DeltaTime);
+	FlapControl = FMath::FInterpTo(FlapControl, FlapInput, DeltaTime, 5.0f);
 }
 
 void UAeroPhysicsComponent::InterpAeroControl(float DeltaTime)
 {
-	PitchControl = FMath::FInterpConstantTo(PitchControl, PitchInput, DeltaTime, ControlInterpSpeed);
-	RollControl = FMath::FInterpConstantTo(RollControl, RollInput, DeltaTime, ControlInterpSpeed);
-	YawControl = FMath::FInterpConstantTo(YawControl, YawInput, DeltaTime, ControlInterpSpeed);
-	FlapControl = FMath::FInterpConstantTo(FlapControl, FlapInput, DeltaTime, ControlInterpSpeed);
+	PitchControl = FMath::FInterpConstantTo(PitchControl, PitchInput, DeltaTime, 5.0f);
+	RollControl = FMath::FInterpConstantTo(RollControl, RollInput, DeltaTime, 5.0f);
+	YawControl = FMath::FInterpConstantTo(YawControl, YawInput, DeltaTime, 5.0f);
+	FlapControl = FMath::FInterpConstantTo(FlapControl, FlapInput, DeltaTime, 5.0f);
 }
 
 

@@ -270,6 +270,7 @@ private:
 	float BrakeForceRatio = 0.0f;
 
 	bool bIsWheelsRetreated = false;
+	float WheelRetreatedRatio = 0.0f;
 
 	/**
 	 * Thruster Force Calculation
@@ -313,8 +314,14 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
 	bool bShowAeroSufaceDubugBox = false;
 
-	UPROPERTY(EditAnywhere, Category = "Debug Parameters")
-	float ControlInterpSpeed = 5.0f;
+	UPROPERTY(EditAnywhere, Category = "AeroControl Parameters")
+	float PitchControlInterpSpeed = 5.0f;
+
+	UPROPERTY(EditAnywhere, Category = "AeroControl Parameters")
+	float PitchControlLimitRatio = 300.0f;
+
+	UPROPERTY(EditAnywhere, Category = "AeroControl Parameters")
+	float RollControlLimitRatio = 20.0f;
 
 	/**
 	 * Flying Control System
